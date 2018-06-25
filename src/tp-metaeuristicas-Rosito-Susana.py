@@ -1,6 +1,12 @@
 import sys
 from math import sqrt
 import collections
+import copy
+
+graphGuie = None
+criterioParadaBusqLocal = 1000
+criterioParadaTabuSearch = 1000
+tamListaTabu = 40
 
 class Node:
     def __init__(self, idty, frequency=None):
@@ -16,15 +22,28 @@ class Node:
     def isFreqNone(self):
         return self.freq == None
 
-    def getNeigh(self, neigh):
-        return self.conflictsToNeigh[neigh]
-    
     def addConfNeigh(self, neigh, conf):
-        self.getNeigh(neigh)[1] = conf 
+        self.conflictsToNeigh[neigh].insert(1, conf)
+
+    def getSumNewConflictNeighs(self, idxfreq):
+        conf = 0 
+        for keyN in self.conflictsToNeigh.keys():
+            if self.getNeigh(keyN)[0].indexfreq == idxfreq:
+                conf += graphGuie.getVtx(self.id).getConflictNeigh(self.getNeigh(keyN)[0].id)
+        return conf
+
+    def getSumConflictNeighs(self):
+        conf = 0 
+        for keyN in self.conflictsToNeigh.keys():
+            conf += self.getConflictNeigh(keyN)
+        return conf
 
     def getConflictNeigh(self, neigh):
         return self.getNeigh(neigh)[1]
 
+    def getNeigh(self, neigh):
+        return self.conflictsToNeigh[neigh]
+    
     def getNeighs(self):
         return self.conflictsToNeigh
             
@@ -73,13 +92,43 @@ class Graph:
     def getNeighbours(self, vertex):
         return self.getVtx(vertex).getNeighs()
 
+    def getCostTotalSol(self):
+        return self.costTotalSol
+
     #------- Abajo - Metodos relacionados al problema --------
     
+    # cambia la frecuencia de un vertice
+    def changeFreqToVertex(self, vertex, idxfreq):
+        changeVert = self.getVtx(vertex) 
+        freq = self.frequency[idxfreq]
+        changeVert.assignFreq(freq, idxfreq)
+        
+        for neigh in changeVert.getNeighs():
+            vecConf = changeVert.getNeigh(neigh)
+            idxVecFreq = vecConf[0].indexfreq
+            if(idxVecFreq == idxfreq):
+                if(vecConf[1] == 0):
+                    print("misma frecuencia")
+                    costVec = graphGuie.getVtx(vertex).getConflictNeigh(vecConf[0].id) 
+                    print(vecConf[0].id)
+                    print(costVec)
+                    changeVert.addConfNeigh(vecConf[0].id, costVec)
+                    vecConf[0].addConfNeigh(vertex, costVec)
+                    print(vertex)
+                    print(costVec)
+            elif (vecConf[1] != 0):
+                print("distinta frecuencia")
+                costVec = 0
+                changeVert.addConfNeigh(vecConf[0].id, costVec)
+                vecConf[0].addConfNeigh(vertex, costVec)
+                print(vertex)
+                print(costVec) 
+
     # Asigna una frecuencia al vertice vertex
     def assignVertFreq(self, vertex, idxfreq):
         self.countUsedFreq(idxfreq)
         self.getVtx(vertex).assignFreq(self.frequency[idxfreq], idxfreq)
-
+    
     # Actualiza el contador de uso de la frecuencia freq // Ademas suma el costo de uso costTotalSol    
     def countUsedFreq(self, idxfreq):
         if self.countUsedFrequency[idxfreq] == 0:
@@ -102,17 +151,21 @@ class Graph:
     def incrementCounterUsedFreq(self, idxfreq):
         self.countUsedFrequency[idxfreq] += 1
 
+    # estas funcion esta bien     
+    def decrementCounterUsedFreq(self, idxfreq):
+        self.countUsedFrequency[idxfreq] -= 1
+
     def getNextFreqBarata(self, freqVecinos):
         nextFreq = None
-        min = 100000*100000
+        minc = 100000*100000
         idx = None
         for fqidx in range(0, len(self.frequency)):
             freq = self.frequency[fqidx]
             if fqidx not in freqVecinos:
                 cost = 0 if self.countUsedFrequency[fqidx] >= 1 else self.frequency[fqidx]
-                if cost < min:
+                if cost < minc:
                     nextFreq = freq
-                    min = cost
+                    minc = cost
                     idx = fqidx
                     break
         return (nextFreq, idx)
@@ -124,7 +177,7 @@ class Graph:
     # devuelve la frecuencia mas barata
     def getFreqBarata(self):
         return 0   
-    
+
     # devuelve el costo de la frecuencia
     def costFreq(self, freqidx):
         return 0 if self.countUsedFrequency[freqidx] >= 1 else self.frequency[freqidx]
@@ -132,6 +185,55 @@ class Graph:
     # calculando Cota de uso de Freq        
     def addConflitcTotal(self, conflict): 
         self.cotaCostUsedFreq += conflict
+    
+    def calcularCostChangeFreq(self, vertexidx, freqidx):
+        vertex = self.getVtx(vertexidx)
+        freqidxVer = vertex.indexfreq
+        # Dist
+        costNewFreq = self.costFreq(freqidx)
+        confNewFreq = vertex.getSumNewConflictNeighs(freqidx) 
+        # Old
+        confOldFreq = vertex.getSumConflictNeighs() 
+        costUsedOldFreq = 0 if (self.countUsedFrequency[freqidxVer]-1) >= 1 else self.frequency[freqidxVer]
+
+        print("costo Total")
+        print(self.costTotalSol)
+        
+        print("cost New Freq")
+        print(costNewFreq)
+        
+        print("conf Old Freq")
+        print(confOldFreq)
+        
+        print("conf New Freq")
+        print(confNewFreq)
+        
+        print("cost Used Old Freq")
+        print(costUsedOldFreq)
+        
+        costNewTotal = self.costTotalSol + costNewFreq - confOldFreq + confNewFreq - costUsedOldFreq
+        print("Costo New Total")
+        print(costNewTotal)
+
+        return costNewTotal
+
+    def changeVertFreq(self, vertexidx, freqidx):
+        vertex = self.getVtx(vertexidx)
+        freqidxVer = vertex.indexfreq
+        self.decrementCounterUsedFreq(freqidxVer) # actualiza el contador de anterior frecuencia
+        # Dist
+        costNewFreq = self.costFreq(freqidx)
+        confNewFreq = vertex.getSumNewConflictNeighs(freqidx) 
+        # Old
+        confOldFreq = vertex.getSumConflictNeighs() 
+        costUsedOldFreq = self.costFreq(freqidxVer)
+        
+        self.changeFreqToVertex(vertexidx, freqidx) # actualiza el contador de la nueva frecuencia  suma el nuevo costo : costNewFreq
+        self.incrementCounterUsedFreq(freqidx)
+
+        costNewTotal = costNewFreq + confNewFreq - confOldFreq - costUsedOldFreq
+        self.addConflFreqToTotal(costNewTotal)
+
                
     def printToReprep(self):
         resgraph = ""
@@ -168,85 +270,85 @@ def tabu_search(solFactibles, sol):
        retornar s. 
     '''
 
-
 ########### BUSQUEDA LOCAL - PREPARANDO TODO PARA META HEURISTICA TABU SEARCH #################
-def searchBestNeighbour(sol, iter):
-    solParcial = sol
-    for (a=1 ; a < N+1 ; a++) # por cada antena
-        for (f = 0 ; f < T ; f++) # por cada frecuencia
-            if (solParcial.get_freq(a) == f) continue
-            solParcial.set_freq(a,f)
-            if (solParcial.cost() < s.cost())
-                return solParcial
 
+def searchBestNeighbour(sol):
+    print("buscar neighbour")
+    solParcial = copy.deepcopy(sol)
+    print(range(1, len(sol.getVtxs())+1))
+    print(range(0, len(sol.frequency)))
 
-def busquedaLocal(solGlobal, cantAntenas, cantFreq):
-    iteration = 0 
-    while ( no_parada ) # tengo que definir criterio de parada : Cant iteracciones
-        solParcial = buscar_vecino_mejor(solGlobal, i, cantAntenas, cantFreq) # despues vere que hago con i 
-        solGlobal = solParcial 
-        i++
+    for ant in range(1, len(sol.getVtxs())+1):
+        for freq in range(0, len(sol.frequency)):
+            if not (solParcial.getVtx(ant).indexfreq == freq):
+                costoSolParc = solParcial.calcularCostChangeFreq(ant, freq)
+                print("costo sol_parc")
+                print(costoSolParc)
+                print("cost de Sol ")
+                print(sol.getCostTotalSol())
+                if(costoSolParc < sol.getCostTotalSol()):
+                    print("es menor")
+                    solParcial.changeVertFreq(ant, freq)
+                    return solParcial
+    return solParcial
+                    
+def busquedaLocal(solGlobal):
+    print("busqueda local")
+    solGlobal = searchBestNeighbour(solGlobal) # despues vere que hago con i 
     return solGlobal
 
 ##################################################################
 
 ########### HEURISTICA CONSTRUCTIVA GOLOSA #################
-def calcularAssignVecinosConFreq(vecCurrentIdx, neighbours, graphguie, newgraph):
-    freqAssign = None
-    costAssign = None
+def calcularAssignVecinosConFreq(vecCurrentIdx, neighbours, newgraph):
     indexFreq = None
+    costAssign = None
     vecFreqVecinos = []
+    FreqToVecinos = {}
+
+    # separa los vecinos por frecuencia
     for neigh in neighbours:
         vec = neigh[0]
-        freqVec = vec.freq
-        costVec = graphguie.getVtx(vecCurrentIdx).getConflictNeigh(vec.id)
-        vecFreqVecinos.append(newgraph.getVtx(vec.id).indexfreq)
-        if (freqAssign == None and costAssign == None):
-            freqAssign = freqVec
-            costAssign = costVec
-            indexFreq = newgraph.getVtx(vec.id).indexfreq
-
-        elif costVec < costAssign:
-            freqAssign = freqVec
-            costAssign = costVec
-            indexFreq = newgraph.getVtx(vec.id).indexfreq
+        freqIndexVec = vec.indexfreq
+        vecFreqVecinos.append(freqIndexVec)
+        if freqIndexVec not in FreqToVecinos.keys():
+            FreqToVecinos[freqIndexVec] = [vec]
+        else:
+            FreqToVecinos[freqIndexVec].append(vec)
+   
+    # compara y se fija cual es lo que mas conviene considerando todos los conflictos si coinciden la frecuencia 
+    for freqIndx in FreqToVecinos.keys():
+        conflVec = 0
+        for vect in FreqToVecinos[freqIndx]:
+            conflVec += graphGuie.getVtx(vecCurrentIdx).getConflictNeigh(vect.id)
+        
+        if (indexFreq == None and costAssign == None):
+            indexFreq = freqIndx
+            costAssign = conflVec
+        elif conflVec < costAssign:
+            indexFreq = freqIndx
+            costAssign = conflVec
     
-    print(vecFreqVecinos)
-
+    # compara con la proxima frecuencia a ver con cual se queda
     newFreq = newgraph.getNextFreqBarata(vecFreqVecinos)
     if(newFreq[0] != None):
         freqNewVec = newFreq[0]
         costNewVec = newgraph.costFreq(newFreq[1]) # paso indice indice
         if(costNewVec < costAssign):
-            freqAssign = freqNewVec
-            costAssign = costNewVec
             indexFreq = newFreq[1]
-
-    #print("freqAssign") 
-    #print(freqAssign)       
-    #print("costoAssig")
-    #print(costAssign)        
-    #print("index de frecuencia con el cual me quedo")
-    #print(indexFreq)
-
+            costAssign = costNewVec
+     
+    # asigna la frecuencia al vertice actual        
     newgraph.assignVertFreq(vecCurrentIdx, indexFreq) # asignamos la frecuencia
     
     for neigh in neighbours: # actualizamos los conflictos si los hay.
         vec = neigh[0]
         idxVecFreq = vec.indexfreq
-        #print("index vec freq")
-        #print(idxVecFreq)
         if(idxVecFreq == indexFreq):
-            #print("son iguales")
-            costVec = graphguie.getVtx(vecCurrentIdx).getConflictNeigh(vec.id)
-            #print("costo que se suma")
-            #print(costVec)
+            costVec = graphGuie.getVtx(vecCurrentIdx).getConflictNeigh(vec.id)
             newgraph.addConflFreqToTotal(costVec)
-
             newgraph.getVtx(vecCurrentIdx).addConfNeigh(vec.id, costVec)
             newgraph.getVtx(vec.id).addConfNeigh(vecCurrentIdx, costVec)
-    #print("costo total hasta ahora")        
-    #print(newgraph.costTotalSol)        
 
 def vecinosSinConFreq(vecinos):
     vecSinfreq = []
@@ -258,19 +360,27 @@ def vecinosSinConFreq(vecinos):
             vecConfreq.append(vecinos[vec])
     return (vecSinfreq, vecConfreq)
 
-def heuristicaConstructivaGolosa(graphguie, newgraph):
+def heuristicaConstructivaGolosa(newgraph):
     for vertex in newgraph.getVtxs():
-        print(newgraph.countUsedFrequency)
         vecSin, vecCon = vecinosSinConFreq(newgraph.getNeighbours(vertex))
         if len(vecCon) == 0:
             newgraph.assignVertFreq(vertex, newgraph.getFreqBarata())
         else:
-            calcularAssignVecinosConFreq(vertex, vecCon, graphguie, newgraph)
+            calcularAssignVecinosConFreq(vertex, vecCon, newgraph)
     return newgraph
 
 ###########################################################
 
 def exec_main():
+    
+    global graphGuie 
+    global criterioParadaBusqLocal 
+    global criterioParadaTabuSearch 
+    global tamListaTabu 
+
+    criterioParadaBusqLocal = 1000
+    criterioParadaTabuSearch = 1000
+    tamListaTabu = 40
 
     antFreqConf = read_line().split(" ")
     n = int(antFreqConf[0])  # numero de antenas
@@ -313,16 +423,17 @@ def exec_main():
 
     #print(frequency)
     #print(contUsedFrequency)
-    resultGraph = heuristicaConstructivaGolosa(graphGuie, graphSinAssignFreq)    
+    resultHeuristConstGolosa = heuristicaConstructivaGolosa(graphSinAssignFreq)    
+    resultBusqLocal = busquedaLocal(resultHeuristConstGolosa)
 
     print(";;;;;;;;;;;;;;;")
     #print(graphGuie.cotaCostUsedFreq)    
-    #print(resultGraph)
+    #print(resultHeuristConstGolosa)
     #print(frequency)
     #print("*************")
     #print(contUsedFrequency)
     #print("//////////////////")
-    #print(resultGraph.costTotalSol)
-    print(resultGraph)
+    print(resultBusqLocal.getCostTotalSol())
+    #print(resultGraph)
 
 exec_main()
